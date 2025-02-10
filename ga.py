@@ -45,12 +45,15 @@ class Individual_Grid(object):
         # Default fitness function: Just some arbitrary combination of a few criteria.  Is it good?  Who knows?
         # STUDENT Modify this, and possibly add more metrics.  You can replace this with whatever code you like.
         coefficients = dict(
+            #Metrics with positive weights are desirable
+            #While metrics with negative weights are undesriable
             meaningfulJumpVariance=0.5,
             negativeSpace=0.6,
             pathPercentage=0.5,
             emptyPercentage=0.6,
-            linearity=-0.5,
-            solvability=2.0
+            linearity=-0.5, #Since its negative the less linear a level is the better
+            solvability=2.0,# wieght is extremly high because solvable levels are essentail
+            
         )
         self._fitness = sum(map(lambda m: coefficients[m] * measurements[m],
                                 coefficients))

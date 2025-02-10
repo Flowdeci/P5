@@ -234,17 +234,17 @@ def metrics(levelStr):
     else:
         return {
             'length': maxX,
-            'negativeSpace': negativeSpace,
-            'pathPercentage': -1,
-            'emptyPercentage': emptyPercentage,
-            'decorationPercentage': decorationPercentage,
-            'leniency': leniency,
-            'meaningfulJumps': -1,
-            'jumps': -1,
-            'meaningfulJumpVariance': -1,
-            'jumpVariance': -1,
-            'linearity': linearity,
-            'solvability': 0}
+            'negativeSpace': negativeSpace,#higher level means more blocks
+            'pathPercentage': -1,#higher level means shortest path covers more of the leve 
+            'emptyPercentage': emptyPercentage,#higher level means lesss obstacles and decorations
+            'decorationPercentage': decorationPercentage,#higher levels means more decorations
+            'leniency': leniency,#levels with fewer enemies, more power-ups, and more gaps are considered more lenient
+            'meaningfulJumps': -1,#Higher numbers indicate a level with more challenging or interesting platforming
+            'jumps': -1,#counts the total number of jumps
+            'meaningfulJumpVariance': -1,# only meaningful jumps are counted from jump Variance
+            'jumpVariance': -1,#,#higher value means more variety in the types of jumps required
+            'linearity': linearity,#A more linear level has fewer vertical variations
+            'solvability': 0}# can mario reach the goal
 
 
 if __name__ == "__main__":
