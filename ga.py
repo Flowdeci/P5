@@ -21,9 +21,9 @@ options = [
     "|",  # a pipe segment
     "T",  # a pipe top
     "E",  # an enemy
-    #"f",  # a flag, do not generate
-    #"v",  # a flagpole, do not generate
-    #"m"  # mario's start position, do not generate
+    # "f",  # a flag, do not generate
+    # "v",  # a flagpole, do not generate
+    # "m"  # mario's start position, do not generate
 ]
 
 # The level as a grid of tiles
@@ -45,18 +45,18 @@ class Individual_Grid(object):
         # Default fitness function: Just some arbitrary combination of a few criteria.  Is it good?  Who knows?
         # STUDENT Modify this, and possibly add more metrics.  You can replace this with whatever code you like.
         coefficients = dict(
-            #Metrics with positive weights are desirable
-            #While metrics with negative weights are undesriable
+            # Metrics with positive weights are desirable
+            # While metrics with negative weights are undesriable
             meaningfulJumpVariance=0.5,
             negativeSpace=0.6,
             pathPercentage=0.5,
             emptyPercentage=0.6,
-            linearity=-0.5, #Since its negative the less linear a level is the better
-            solvability=2.0,# wieght is extremly high because solvable levels are essentail
-            
+            linearity=-0.5,  # Since its negative the less linear a level is the better
+            solvability=2.0,  # wieght is extremly high because solvable levels are essentail
         )
-        self._fitness = sum(map(lambda m: coefficients[m] * measurements[m],
-                                coefficients))
+        self._fitness = sum(
+            map(lambda m: coefficients[m] * measurements[m], coefficients)
+        )
         return self
 
     # Return the cached fitness value or calculate it as needed.
@@ -71,11 +71,54 @@ class Individual_Grid(object):
         # STUDENT also consider weighting the different tile types so it's not uniformly random
         # STUDENT consider putting more constraints on this to prevent pipes in the air, etc
 
-        left = 1
-        right = width - 1
-        for y in range(height):
+        left = 1  # first column
+        right = width - 1  # last column
+        ground_level=height-1;
+
+        #ADd pipes
+        for x in range(left, right):
+            if genome[ground_level][x]=="X" and random.random()<0.05:
+
+                pipe_height=random.randint(1,4);
+                can_place_pipe=all(
+                    genome[ground_level - i][x] == "-" for i in range(1, pipe_height + 1)
+                )#Ensure that a pipe can be placced on ground with enough space going up
+
+                if can_place_pipe:
+                    for i in range(1,pipe_height+1):
+                        genome[ground_level-i][x]="|"
+                    genome[ground_level-pipe_height][x]="T"
+        
+        #Add floating platforms
+        for y in range(5, ground_level-1):
+            # Add in the middle part of the level
+            for x in range(left, right-2, 4):
+                # Check every 4 tiles to reduce clustering
+                if random.random()<0.1:
+                    platform_wdith=random.randint(2,5);
+
+                    #check if all the platofrm is all air
+                    can_place_platform=all(
+                        genome[y][x+i] == '-' for i in range(platform_wdith)
+                    )
+
+                    if can_place_platform:
+                        for i in range(platform_wdith):
+                            genome[y][x+i]=random.choices(["X","?","o"],weights=[75, 15,10], k=1)[0];
+
+        #Place enemies
+        for x in range(left, right):
+            if genome[ground_level][x]=="X" and random.random()<0.05:
+                if genome[ground_level-1][x+1] == '-':#only place enemies in open air
+                    genome[ground_level-1][x]="E"
+
+        #Place coins
+        for y in range(5, ground_level-1):
             for x in range(left, right):
-                pass
+                if genome[y][x]=='-' and genome[y+1][x] in ["X","?"]:
+                    if random.random()<0.03:
+                        genome[y][x]="o"
+
         return genome
 
     # Create zero or more children from self and other
@@ -123,6 +166,13 @@ class Individual_Grid(object):
         g[14:16][-1] = ["X", "X"]
         return cls(g)
 
+    @classmethod
+    def from_file(cls, file_path):
+        """Create an Individual_Grid directly from a level file."""
+        with open(file_path, "r") as f:
+            genome = [list(line.strip()) for line in f.readlines()]
+        return cls(genome)
+
 
 def offset_by_upto(val, variance, min=None, max=None):
     val += random.normalvariate(0, variance**0.5)
@@ -139,6 +189,7 @@ def clip(lo, val, hi):
     if val > hi:
         return hi
     return val
+
 
 # Inspired by https://www.researchgate.net/profile/Philippe_Pasquier/publication/220867545_Towards_a_Generic_Framework_for_Automated_Video_Game_Level_Creation/links/0912f510ac2bed57d1000000.pdf
 
@@ -166,15 +217,17 @@ class Individual_DE(object):
             pathPercentage=0.5,
             emptyPercentage=0.6,
             linearity=-0.5,
-            solvability=2.0
+            solvability=2.0,
         )
         penalties = 0
         # STUDENT For example, too many stairs are unaesthetic.  Let's penalize that
         if len(list(filter(lambda de: de[1] == "6_stairs", self.genome))) > 5:
             penalties -= 2
         # STUDENT If you go for the FI-2POP extra credit, you can put constraint calculation in here too and cache it in a new entry in __slots__.
-        self._fitness = sum(map(lambda m: coefficients[m] * measurements[m],
-                                coefficients)) + penalties
+        self._fitness = (
+            sum(map(lambda m: coefficients[m] * measurements[m], coefficients))
+            + penalties
+        )
         return self
 
     def fitness(self):
@@ -308,13 +361,17 @@ class Individual_DE(object):
                     dx = de[3]  # -1 or 1
                     for x2 in range(1, h + 1):
                         for y in range(x2 if dx == 1 else h - x2):
-                            base[clip(0, height - y - 1, height - 1)][clip(1, x + x2, width - 2)] = "X"
+                            base[clip(0, height - y - 1, height - 1)][
+                                clip(1, x + x2, width - 2)
+                            ] = "X"
                 elif de_type == "1_platform":
                     w = de[2]
                     h = de[3]
                     madeof = de[4]  # from "?", "X", "B"
                     for x2 in range(w):
-                        base[clip(0, height - h - 1, height - 1)][clip(1, x + x2, width - 2)] = madeof
+                        base[clip(0, height - h - 1, height - 1)][
+                            clip(1, x + x2, width - 2)
+                        ] = madeof
                 elif de_type == "2_enemy":
                     base[height - 2][x] = "E"
             self._level = base
@@ -330,16 +387,50 @@ class Individual_DE(object):
     def random_individual(_cls):
         # STUDENT Maybe enhance this
         elt_count = random.randint(8, 128)
-        g = [random.choice([
-            (random.randint(1, width - 2), "0_hole", random.randint(1, 8)),
-            (random.randint(1, width - 2), "1_platform", random.randint(1, 8), random.randint(0, height - 1), random.choice(["?", "X", "B"])),
-            (random.randint(1, width - 2), "2_enemy"),
-            (random.randint(1, width - 2), "3_coin", random.randint(0, height - 1)),
-            (random.randint(1, width - 2), "4_block", random.randint(0, height - 1), random.choice([True, False])),
-            (random.randint(1, width - 2), "5_qblock", random.randint(0, height - 1), random.choice([True, False])),
-            (random.randint(1, width - 2), "6_stairs", random.randint(1, height - 4), random.choice([-1, 1])),
-            (random.randint(1, width - 2), "7_pipe", random.randint(2, height - 4))
-        ]) for i in range(elt_count)]
+        g = [
+            random.choice(
+                [
+                    (random.randint(1, width - 2), "0_hole", random.randint(1, 8)),
+                    (
+                        random.randint(1, width - 2),
+                        "1_platform",
+                        random.randint(1, 8),
+                        random.randint(0, height - 1),
+                        random.choice(["?", "X", "B"]),
+                    ),
+                    (random.randint(1, width - 2), "2_enemy"),
+                    (
+                        random.randint(1, width - 2),
+                        "3_coin",
+                        random.randint(0, height - 1),
+                    ),
+                    (
+                        random.randint(1, width - 2),
+                        "4_block",
+                        random.randint(0, height - 1),
+                        random.choice([True, False]),
+                    ),
+                    (
+                        random.randint(1, width - 2),
+                        "5_qblock",
+                        random.randint(0, height - 1),
+                        random.choice([True, False]),
+                    ),
+                    (
+                        random.randint(1, width - 2),
+                        "6_stairs",
+                        random.randint(1, height - 4),
+                        random.choice([-1, 1]),
+                    ),
+                    (
+                        random.randint(1, width - 2),
+                        "7_pipe",
+                        random.randint(2, height - 4),
+                    ),
+                ]
+            )
+            for i in range(elt_count)
+        ]
         return Individual_DE(g)
 
 
@@ -359,20 +450,29 @@ def ga():
     # Code to parallelize some computations
     batches = os.cpu_count()
     if pop_limit % batches != 0:
-        print("It's ideal if pop_limit divides evenly into " + str(batches) + " batches.")
+        print(
+            "It's ideal if pop_limit divides evenly into " + str(batches) + " batches."
+        )
     batch_size = int(math.ceil(pop_limit / batches))
     with mpool.Pool(processes=os.cpu_count()) as pool:
         init_time = time.time()
         # STUDENT (Optional) change population initialization
-        population = [Individual.random_individual() if random.random() < 0.9
-                      else Individual.empty_individual()
-                      for _g in range(pop_limit)]
+        population = [
+            (
+                Individual.random_individual()
+                if random.random() < 0.9
+                else Individual.empty_individual()
+            )
+            for _g in range(pop_limit)
+        ]
         # But leave this line alone; we have to reassign to population because we get a new population that has more cached stuff in it.
-        population = pool.map(Individual.calculate_fitness,
-                              population,
-                              batch_size)
+        population = pool.map(Individual.calculate_fitness, population, batch_size)
         init_done = time.time()
-        print("Created and calculated initial population statistics in:", init_done - init_time, "seconds")
+        print(
+            "Created and calculated initial population statistics in:",
+            init_done - init_time,
+            "seconds",
+        )
         generation = 0
         start = time.time()
         now = start
@@ -387,7 +487,7 @@ def ga():
                     print("Max fitness:", str(best.fitness()))
                     print("Average generation time:", (now - start) / generation)
                     print("Net time:", now - start)
-                    with open("levels/last.txt", 'w') as f:
+                    with open("levels/last.txt", "w") as f:
                         for row in best.to_level():
                             f.write("".join(row) + "\n")
                 generation += 1
@@ -401,9 +501,9 @@ def ga():
                 gendone = time.time()
                 print("Generated successors in:", gendone - gentime, "seconds")
                 # Calculate fitness in batches in parallel
-                next_population = pool.map(Individual.calculate_fitness,
-                                           next_population,
-                                           batch_size)
+                next_population = pool.map(
+                    Individual.calculate_fitness, next_population, batch_size
+                )
                 popdone = time.time()
                 print("Calculated fitnesses in:", popdone - gendone, "seconds")
                 population = next_population
@@ -412,6 +512,7 @@ def ga():
     return population
 
 
+"""
 if __name__ == "__main__":
     final_gen = sorted(ga(), key=Individual.fitness, reverse=True)
     best = final_gen[0]
@@ -422,3 +523,26 @@ if __name__ == "__main__":
         with open("levels/" + now + "_" + str(k) + ".txt", 'w') as f:
             for row in final_gen[k].to_level():
                 f.write("".join(row) + "\n")
+"""
+
+
+if __name__ == "__main__":
+    # Load the starting level from level.txt
+    starting_level_path = "level.txt"
+    # individual = Individual_Grid.from_file(starting_level_path)
+    individual = Individual.empty_individual()
+    print("Starting Level:")
+
+    # Apply mutation to the loaded level
+    mutated_genome = individual.mutate(individual.genome)
+
+    print("\nMutated Level:")
+    
+    # Save the mutated level to a file
+    with open("levels/mutated_level.txt", "w") as f:
+        for row in mutated_genome:
+            f.write("".join(row) + "\n")
+
+    print("Mutated level saved to 'levels/mutated_level.txt'")
+
+# to many levels down on the ranodm and clear one idk why that bugs the unity hcekc out
