@@ -52,10 +52,39 @@ class Individual_Grid(object):
             pathPercentage=0.5,
             emptyPercentage=0.6,
             linearity=-0.5,  # Since its negative the less linear a level is the better
-            solvability=2.0,  # wieght is extremly high because solvable levels are essentail
+            solvability=3.0,  # wieght is extremly high because solvable levels are essentail
         )
-        self._fitness = sum(
-            map(lambda m: coefficients[m] * measurements[m], coefficients)
+
+        #Penealties for overcrodwing
+        overcrowding_penalty = 0
+        tile_counts = {
+            "pipe": sum(row.count("T") + row.count("|") for row in self.genome),
+            "blocks": sum(row.count("?") + row.count("B") for row in self.genome),
+            "coins": sum(row.count("o") for row in self.genome),
+            "enemies": sum(row.count("E") for row in self.genome),
+        }
+
+        # Add penalties for overcrowding
+        if tile_counts["pipe"] > 15:
+            overcrowding_penalty -= 1
+        #if tile_counts["blocks"] > 100:
+            #overcrowding_penalty -= 2
+        if tile_counts["coins"] >40:
+            overcrowding_penalty -= 0.5
+        if tile_counts["enemies"] > 15:
+            overcrowding_penalty -= 1
+
+        # Penalize lack of ground support for pipes
+        floating_pipes_penalty = 0
+        ground_level = height - 1
+        for x in range(1, width - 1):
+            if self.genome[ground_level][x] not in ["X", "T", "|"] and "T" in [row[x] for row in self.genome]:
+                floating_pipes_penalty -= 1
+
+        self._fitness = (
+            sum(map(lambda m: coefficients[m] * measurements[m], coefficients))
+            +floating_pipes_penalty
+            +overcrowding_penalty
         )
         return self
 
@@ -65,19 +94,24 @@ class Individual_Grid(object):
             self.calculate_fitness()
         return self._fitness
 
+   
     # Mutate a genome into a new genome.  Note that this is a _genome_, not an individual!
     def mutate(self, genome):
         # STUDENT implement a mutation operator, also consider not mutating this individual
         # STUDENT also consider weighting the different tile types so it's not uniformly random
         # STUDENT consider putting more constraints on this to prevent pipes in the air, etc
 
+        #randomly decided wehter to mutate the level at all
+        if random.random() > 0.5:
+            return genome
         left = 1  # first column
         right = width - 1  # last column
         ground_level=height-1;
+        player_start_x = 0
 
         #ADd pipes
         for x in range(left, right):
-            if genome[ground_level][x]=="X" and random.random()<0.05:
+            if genome[ground_level][x]=="X" and random.random()<0.02:
 
                 pipe_height=random.randint(1,4);
                 can_place_pipe=all(
@@ -94,49 +128,83 @@ class Individual_Grid(object):
             # Add in the middle part of the level
             for x in range(left, right-2, 4):
                 # Check every 4 tiles to reduce clustering
-                if random.random()<0.1:
+                if random.random()<0.04:
                     platform_wdith=random.randint(2,5);
 
                     #check if all the platofrm is all air
-                    can_place_platform=all(
-                        genome[y][x+i] == '-' for i in range(platform_wdith)
+                    can_place_platform = all(
+                        genome[y][x + i] == "-" and genome[y + 2][x + i] == "-" and genome[y - 2][x + i] == "-"and genome[y + 1][x + i] == "-" and genome[y - 1][x + i] == "-"
+                        for i in range(platform_wdith)
                     )
-
                     if can_place_platform:
                         for i in range(platform_wdith):
-                            genome[y][x+i]=random.choices(["X","?","o"],weights=[75, 15,10], k=1)[0];
+                            genome[y][x+i]=random.choices(["X","?","o","M"],weights=[60, 15,10,15], k=1)[0];
 
-        #Place enemies
+       
+        enemy_cap = 20
+        enemy_count = sum(row.count("E") for row in genome)  
+         # Place enemies on ground
         for x in range(left, right):
-            if genome[ground_level][x]=="X" and random.random()<0.05:
-                if genome[ground_level-1][x+1] == '-':#only place enemies in open air
-                    genome[ground_level-1][x]="E"
+            if genome[ground_level][x] == "X" and genome[ground_level - 1][x] == "-":
+                if random.random() < 0.01: 
+                    #make sure no enmeis with 5 blocks of player
+                    if abs(x - player_start_x) > 5:
+                        genome[ground_level - 1][x] = "E"
+                        enemy_count += 1
+                        if enemy_count >= enemy_cap/2:
+                            break
+        # gerneate a list of all possible coordinates
+        coordinates = [(x, y) for y in range(1, ground_level) for x in range(left, right)]
+        random.shuffle(coordinates)  # randomize the order of coordinates
+        #Spawn enmies in the air
+        for x, y in coordinates:
+            if genome[y][x] in ["X", "?", "B", "M"] and genome[y - 1][x] == "-":
+                if random.random() < 0.01 and enemy_count < enemy_cap: 
+                    genome[y - 1][x] = "E"
+                    enemy_count += 1
+                    if enemy_count >= enemy_cap:
+                        break
 
         #Place coins
         for y in range(5, ground_level-1):
             for x in range(left, right):
                 if genome[y][x]=='-' and genome[y+1][x] in ["X","?"]:
-                    if random.random()<0.03:
+                    if random.random()<0.02:
                         genome[y][x]="o"
+
+        random_block_count = random.randint(5, 20)  # Add a random number of blocks
+        for _ in range(random_block_count):
+            x = random.randint(left, right - 1)
+            y = random.randint(1, ground_level - 1)  # Avoid placing on the top or ground levels
+
+            if genome[y][x] == "-":  # Only place blocks in empty spaces
+                genome[y][x] = random.choices(["X", "?", "B", "M","E","o"], weights=[50, 15, 15, 10,5,5], k=1)[0]
 
         return genome
 
-    # Create zero or more children from self and other
+
     def generate_children(self, other):
         new_genome = copy.deepcopy(self.genome)
-        # Leaving first and last columns alone...
-        # do crossover with other
-        left = 1
-        right = width - 1
-        for y in range(height):
-            for x in range(left, right):
-                # STUDENT Which one should you take?  Self, or other?  Why?
-                # STUDENT consider putting more constraints on this to prevent pipes in the air, etc
-                pass
-        # do mutation; note we're returning a one-element tuple here
-        return (Individual_Grid(new_genome),)
 
-    # Turn the genome into a level string (easy for this genome)
+        #Make children by replacing chunks of the parents
+        chunk_size = 10
+        num_chunks = width // chunk_size
+
+        for chunk in range(num_chunks):
+            if random.random() < 0.5:  # 50% chance to take a chunk from the other parent
+                start_col = chunk * chunk_size
+                end_col = start_col + chunk_size
+
+                # replace the chunk of columns with the other parents chunk
+                for y in range(height):
+                    for x in range(start_col, end_col):
+                        new_genome[y][x] = other.genome[y][x]
+
+        # apply mutation
+        child = Individual_Grid(new_genome)
+        child.mutate(child.genome)
+        return (child,)
+
     def to_level(self):
         return self.genome
 
@@ -147,11 +215,11 @@ class Individual_Grid(object):
         g = [["-" for col in range(width)] for row in range(height)]
         g[15][:] = ["X"] * width
         g[14][0] = "m"
-        g[7][-1] = "v"
+        g[7][-2] = "v"
         for col in range(8, 14):
-            g[col][-1] = "f"
+            g[col][-2] = "f"
         for col in range(14, 16):
-            g[col][-1] = "X"
+            g[col][-2] = "X"
         return cls(g)
 
     @classmethod
@@ -165,13 +233,6 @@ class Individual_Grid(object):
         g[8:14][-1] = ["f"] * 6
         g[14:16][-1] = ["X", "X"]
         return cls(g)
-
-    @classmethod
-    def from_file(cls, file_path):
-        """Create an Individual_Grid directly from a level file."""
-        with open(file_path, "r") as f:
-            genome = [list(line.strip()) for line in f.readlines()]
-        return cls(genome)
 
 
 def offset_by_upto(val, variance, min=None, max=None):
@@ -438,10 +499,37 @@ Individual = Individual_Grid
 
 
 def generate_successors(population):
-    results = []
     # STUDENT Design and implement this
     # Hint: Call generate_children() on some individuals and fill up results.
-    return results
+    
+    #choose parents
+    def select_parent(population):
+        #roulette whelel selection
+        total_fitness=sum(ind.fitness() for ind in population)
+        pick=random.uniform(0,total_fitness)
+        current=0
+        for ind in population:
+            #accumlate fitness and stop once its greater than needed
+            current+=ind.fitness()
+            if current>pick:
+                return ind
+        #Fallback if none are selected
+        return random.choice(population)
+        
+    # Generate offspring
+    next_population=[]
+    while(len(next_population)<len(population)):
+        parent1=select_parent(population);
+        parent2=select_parent(population);
+
+        #Crossover
+        child=parent1.generate_children(parent2)[0]
+
+        child.mutate(child.genome)
+
+        next_population.append(child)
+
+    return next_population
 
 
 def ga():
@@ -459,7 +547,7 @@ def ga():
         # STUDENT (Optional) change population initialization
         population = [
             (
-                Individual.random_individual()
+                Individual.empty_individual()
                 if random.random() < 0.9
                 else Individual.empty_individual()
             )
@@ -476,6 +564,12 @@ def ga():
         generation = 0
         start = time.time()
         now = start
+        improvement_threshold = 0.01
+        max_generations_without_improvement = 10
+        no_improvement_generations = 0
+        best = max(population, key=Individual.fitness)
+        current_best_fitness = best.fitness()
+        best_fitness=current_best_fitness
         print("Use ctrl-c to terminate this loop manually.")
         try:
             while True:
@@ -483,6 +577,7 @@ def ga():
                 # Print out statistics
                 if generation > 0:
                     best = max(population, key=Individual.fitness)
+                    current_best_fitness = best.fitness()
                     print("Generation:", str(generation))
                     print("Max fitness:", str(best.fitness()))
                     print("Average generation time:", (now - start) / generation)
@@ -492,8 +587,17 @@ def ga():
                             f.write("".join(row) + "\n")
                 generation += 1
                 # STUDENT Determine stopping condition
-                stop_condition = False
-                if stop_condition:
+                if current_best_fitness - best_fitness < improvement_threshold:
+                    no_improvement_generations += 1
+                else:
+                    no_improvement_generations = 0
+                    best_fitness = current_best_fitness
+
+                # Stop if no improvement for too many generations
+                if no_improvement_generations >= max_generations_without_improvement:
+                    print(
+                        f"stopping   early after {generation} generations due to lack of improvement."
+                    )
                     break
                 # STUDENT Also consider using FI-2POP as in the Sorenson & Pasquier paper
                 gentime = time.time()
@@ -512,37 +616,37 @@ def ga():
     return population
 
 
-"""
-if __name__ == "__main__":
-    final_gen = sorted(ga(), key=Individual.fitness, reverse=True)
-    best = final_gen[0]
-    print("Best fitness: " + str(best.fitness()))
+def main():
+    # Parameters
+    num_generations = 100  # Maximum number of generations to evolve
+    num_levels_to_save = 5  # Save top N levels for analysis
+
+    print("Initializing Genetic Algorithm...")
+    final_population = ga()  # Run the genetic algorithm
+
+    # Sort the final population by fitness, descending
+    sorted_population = sorted(final_population, key=Individual.fitness, reverse=True)
+
+    # Print statistics about the final population
+    print("\nFinal Population Statistics:")
+    print(f"Best Fitness: {sorted_population[0].fitness():.4f}")
+    print(f"Average Fitness: {sum(ind.fitness() for ind in sorted_population) / len(sorted_population):.4f}")
+    print(f"Worst Fitness: {sorted_population[-1].fitness():.4f}")
+
+    # Save the top levels to files
     now = time.strftime("%m_%d_%H_%M_%S")
-    # STUDENT You can change this if you want to blast out the whole generation, or ten random samples, or...
-    for k in range(0, 10):
-        with open("levels/" + now + "_" + str(k) + ".txt", 'w') as f:
-            for row in final_gen[k].to_level():
-                f.write("".join(row) + "\n")
-"""
+    output_dir = "levels"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
+    for i in range(min(num_levels_to_save, len(sorted_population))):
+        file_path = f"{output_dir}/{now}_level_{i + 1}.txt"
+        with open(file_path, "w") as f:
+            for row in sorted_population[i].to_level():
+                f.write("".join(row) + "\n")
+        print(f"Saved level {i + 1} to {file_path}")
+
+    print("\nGenetic Algorithm completed.")
 
 if __name__ == "__main__":
-    # Load the starting level from level.txt
-    starting_level_path = "level.txt"
-    # individual = Individual_Grid.from_file(starting_level_path)
-    individual = Individual.empty_individual()
-    print("Starting Level:")
-
-    # Apply mutation to the loaded level
-    mutated_genome = individual.mutate(individual.genome)
-
-    print("\nMutated Level:")
-    
-    # Save the mutated level to a file
-    with open("levels/mutated_level.txt", "w") as f:
-        for row in mutated_genome:
-            f.write("".join(row) + "\n")
-
-    print("Mutated level saved to 'levels/mutated_level.txt'")
-
-# to many levels down on the ranodm and clear one idk why that bugs the unity hcekc out
+    main()
